@@ -17,86 +17,114 @@ fi
 DATE=$(echo "$REPORT_DATA" | jq -r '.date')
 ORG=$(echo "$REPORT_DATA" | jq -r '.organization')
 
-# Build the facts array for each team member, sorted by grandTotal descending
-FACTS=""
-while IFS= read -r member; do
-  displayName=$(echo "$member" | jq -r '.displayName')
-  mergedAdd=$(echo "$member" | jq -r '.merged.additions')
-  mergedDel=$(echo "$member" | jq -r '.merged.deletions')
-  mergedCommits=$(echo "$member" | jq -r '.merged.commits')
-  prAdd=$(echo "$member" | jq -r '.openPRs.additions')
-  prDel=$(echo "$member" | jq -r '.openPRs.deletions')
-  openPrCount=$(echo "$member" | jq -r '.openPRs.count')
-  prsCreated=$(echo "$member" | jq -r '.prsCreated')
-  prsClosed=$(echo "$member" | jq -r '.prsClosed')
-  issuesCreated=$(echo "$member" | jq -r '.issuesCreated')
-  issuesClosed=$(echo "$member" | jq -r '.issuesClosed')
-  grandTotal=$(echo "$member" | jq -r '.grandTotal')
-
-  # Build activity parts
-  parts=()
-
-  # Code changes
-  if [[ "$grandTotal" -gt 0 ]]; then
-    parts+=("**$grandTotal lines** (+$mergedAdd/-$mergedDel merged")
-    if [[ "$openPrCount" -gt 0 ]]; then
-      parts[0]="${parts[0]}, +$prAdd/-$prDel in PRs)"
-    else
-      parts[0]="${parts[0]})"
-    fi
-  fi
-
-  # PRs
-  if [[ "$prsCreated" -gt 0 ]] || [[ "$prsClosed" -gt 0 ]]; then
-    pr_part="PRs:"
-    if [[ "$prsCreated" -gt 0 ]]; then
-      pr_part="$pr_part $prsCreated opened"
-    fi
-    if [[ "$prsClosed" -gt 0 ]]; then
-      if [[ "$prsCreated" -gt 0 ]]; then
-        pr_part="$pr_part,"
-      fi
-      pr_part="$pr_part $prsClosed closed"
-    fi
-    parts+=("$pr_part")
-  fi
-
-  # Issues
-  if [[ "$issuesCreated" -gt 0 ]] || [[ "$issuesClosed" -gt 0 ]]; then
-    issue_part="Issues:"
-    if [[ "$issuesCreated" -gt 0 ]]; then
-      issue_part="$issue_part $issuesCreated opened"
-    fi
-    if [[ "$issuesClosed" -gt 0 ]]; then
-      if [[ "$issuesCreated" -gt 0 ]]; then
-        issue_part="$issue_part,"
-      fi
-      issue_part="$issue_part $issuesClosed closed"
-    fi
-    parts+=("$issue_part")
-  fi
-
-  # Join parts or show no activity
-  if [[ ${#parts[@]} -gt 0 ]]; then
-    value=$(IFS=' | '; echo "${parts[*]}")
-  else
-    value="No activity"
-  fi
-
-  if [[ -n "$FACTS" ]]; then
-    FACTS="$FACTS,"
-  fi
-  FACTS="$FACTS{\"name\": \"$displayName\", \"value\": \"$value\"}"
-done < <(echo "$REPORT_DATA" | jq -c '.team | sort_by(-.grandTotal) | .[]')
-
 # Calculate team totals
 TEAM_TOTAL=$(echo "$REPORT_DATA" | jq '[.team[].grandTotal] | add')
-TEAM_ADDITIONS=$(echo "$REPORT_DATA" | jq '[.team[].merged.additions, .team[].openPRs.additions] | add')
-TEAM_DELETIONS=$(echo "$REPORT_DATA" | jq '[.team[].merged.deletions, .team[].openPRs.deletions] | add')
 TEAM_PRS_CREATED=$(echo "$REPORT_DATA" | jq '[.team[].prsCreated] | add')
 TEAM_PRS_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].prsClosed] | add')
 TEAM_ISSUES_CREATED=$(echo "$REPORT_DATA" | jq '[.team[].issuesCreated] | add')
 TEAM_ISSUES_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].issuesClosed] | add')
+
+# Build individual member sections
+MEMBER_BLOCKS=""
+while IFS= read -r member; do
+  displayName=$(echo "$member" | jq -r '.displayName')
+  grandTotal=$(echo "$member" | jq -r '.grandTotal')
+  prsCreated=$(echo "$member" | jq -r '.prsCreated')
+  prsClosed=$(echo "$member" | jq -r '.prsClosed')
+  issuesCreated=$(echo "$member" | jq -r '.issuesCreated')
+  issuesClosed=$(echo "$member" | jq -r '.issuesClosed')
+
+  # Check if there's any activity
+  hasActivity=false
+  if [[ "$grandTotal" -gt 0 ]] || [[ "$prsCreated" -gt 0 ]] || [[ "$prsClosed" -gt 0 ]] || [[ "$issuesCreated" -gt 0 ]] || [[ "$issuesClosed" -gt 0 ]]; then
+    hasActivity=true
+  fi
+
+  if [[ "$hasActivity" == "true" ]]; then
+    codeText="$grandTotal lines"
+    prText="$prsCreated opened / $prsClosed closed"
+    issueText="$issuesCreated opened / $issuesClosed closed"
+  else
+    codeText="—"
+    prText="—"
+    issueText="—"
+  fi
+
+  if [[ -n "$MEMBER_BLOCKS" ]]; then
+    MEMBER_BLOCKS="$MEMBER_BLOCKS,"
+  fi
+
+  MEMBER_BLOCKS="$MEMBER_BLOCKS
+          {
+            \"type\": \"Container\",
+            \"spacing\": \"Medium\",
+            \"items\": [
+              {
+                \"type\": \"TextBlock\",
+                \"text\": \"**$displayName**\",
+                \"weight\": \"Bolder\",
+                \"size\": \"Medium\"
+              },
+              {
+                \"type\": \"ColumnSet\",
+                \"spacing\": \"Small\",
+                \"columns\": [
+                  {
+                    \"type\": \"Column\",
+                    \"width\": \"stretch\",
+                    \"items\": [
+                      {
+                        \"type\": \"TextBlock\",
+                        \"text\": \"Code\",
+                        \"isSubtle\": true,
+                        \"size\": \"Small\"
+                      },
+                      {
+                        \"type\": \"TextBlock\",
+                        \"text\": \"$codeText\",
+                        \"spacing\": \"None\"
+                      }
+                    ]
+                  },
+                  {
+                    \"type\": \"Column\",
+                    \"width\": \"stretch\",
+                    \"items\": [
+                      {
+                        \"type\": \"TextBlock\",
+                        \"text\": \"PRs\",
+                        \"isSubtle\": true,
+                        \"size\": \"Small\"
+                      },
+                      {
+                        \"type\": \"TextBlock\",
+                        \"text\": \"$prText\",
+                        \"spacing\": \"None\"
+                      }
+                    ]
+                  },
+                  {
+                    \"type\": \"Column\",
+                    \"width\": \"stretch\",
+                    \"items\": [
+                      {
+                        \"type\": \"TextBlock\",
+                        \"text\": \"Issues\",
+                        \"isSubtle\": true,
+                        \"size\": \"Small\"
+                      },
+                      {
+                        \"type\": \"TextBlock\",
+                        \"text\": \"$issueText\",
+                        \"spacing\": \"None\"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }"
+done < <(echo "$REPORT_DATA" | jq -c '.team | sort_by(-.grandTotal) | .[]')
 
 # Create the Teams Adaptive Card payload
 PAYLOAD=$(cat << EOF
@@ -114,8 +142,7 @@ PAYLOAD=$(cat << EOF
             "type": "TextBlock",
             "size": "Large",
             "weight": "Bolder",
-            "text": "Daily Team Activity Report",
-            "style": "heading"
+            "text": "Daily Team Activity Report"
           },
           {
             "type": "TextBlock",
@@ -124,73 +151,80 @@ PAYLOAD=$(cat << EOF
             "spacing": "None"
           },
           {
-            "type": "ColumnSet",
+            "type": "Container",
+            "style": "emphasis",
             "spacing": "Medium",
-            "columns": [
+            "items": [
               {
-                "type": "Column",
-                "width": "auto",
-                "items": [
-                  {
-                    "type": "TextBlock",
-                    "text": "**Code**",
-                    "weight": "Bolder",
-                    "color": "Accent"
-                  },
-                  {
-                    "type": "TextBlock",
-                    "text": "$TEAM_TOTAL lines",
-                    "spacing": "None"
-                  }
-                ]
+                "type": "TextBlock",
+                "text": "**Team Totals**",
+                "weight": "Bolder"
               },
               {
-                "type": "Column",
-                "width": "auto",
-                "items": [
+                "type": "ColumnSet",
+                "columns": [
                   {
-                    "type": "TextBlock",
-                    "text": "**PRs**",
-                    "weight": "Bolder",
-                    "color": "Accent"
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                      {
+                        "type": "TextBlock",
+                        "text": "Code",
+                        "isSubtle": true,
+                        "size": "Small"
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": "$TEAM_TOTAL lines",
+                        "weight": "Bolder",
+                        "color": "Accent",
+                        "spacing": "None"
+                      }
+                    ]
                   },
                   {
-                    "type": "TextBlock",
-                    "text": "$TEAM_PRS_CREATED opened / $TEAM_PRS_CLOSED closed",
-                    "spacing": "None"
-                  }
-                ]
-              },
-              {
-                "type": "Column",
-                "width": "auto",
-                "items": [
-                  {
-                    "type": "TextBlock",
-                    "text": "**Issues**",
-                    "weight": "Bolder",
-                    "color": "Accent"
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                      {
+                        "type": "TextBlock",
+                        "text": "PRs",
+                        "isSubtle": true,
+                        "size": "Small"
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": "$TEAM_PRS_CREATED opened / $TEAM_PRS_CLOSED closed",
+                        "weight": "Bolder",
+                        "color": "Accent",
+                        "spacing": "None"
+                      }
+                    ]
                   },
                   {
-                    "type": "TextBlock",
-                    "text": "$TEAM_ISSUES_CREATED opened / $TEAM_ISSUES_CLOSED closed",
-                    "spacing": "None"
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                      {
+                        "type": "TextBlock",
+                        "text": "Issues",
+                        "isSubtle": true,
+                        "size": "Small"
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": "$TEAM_ISSUES_CREATED opened / $TEAM_ISSUES_CLOSED closed",
+                        "weight": "Bolder",
+                        "color": "Accent",
+                        "spacing": "None"
+                      }
+                    ]
                   }
                 ]
               }
             ]
           },
-          {
-            "type": "TextBlock",
-            "text": "**Individual Activity**",
-            "weight": "Bolder",
-            "spacing": "Medium"
-          },
-          {
-            "type": "FactSet",
-            "facts": [$FACTS],
-            "spacing": "Small"
-          }
+          $MEMBER_BLOCKS
         ]
       }
     }
