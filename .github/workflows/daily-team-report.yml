@@ -1,0 +1,43 @@
+name: Daily Team Activity Report
+
+on:
+  schedule:
+    # Runs at 6:00 PM ET (23:00 UTC) Monday-Friday
+    - cron: '0 23 * * 1-5'
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  ORGANIZATION: ATA-Digital
+  TEAM_MEMBERS: |
+    barrettg:Barrett Gay
+    KHardt:Klaus Hardt
+    LHarris-ATA:Lincoln Harris
+    Patchrik:Parker Kelley
+    spencermoore:Spencer Moore
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate Team Activity Report
+        id: report
+        env:
+          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+        run: |
+          chmod +x ./scripts/gather-activity.sh
+          ./scripts/gather-activity.sh "$ORGANIZATION" "$TEAM_MEMBERS" > report.json
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat report.json >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post to Microsoft Teams
+        if: success()
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          REPORT_DATA: ${{ steps.report.outputs.report }}
+        run: |
+          chmod +x ./scripts/post-to-teams.sh
+          ./scripts/post-to-teams.sh
