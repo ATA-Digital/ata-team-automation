@@ -26,7 +26,11 @@ declare -A MERGED_DELETIONS
 declare -A PR_ADDITIONS
 declare -A PR_DELETIONS
 declare -A COMMIT_COUNT
-declare -A PR_COUNT
+declare -A OPEN_PR_COUNT
+declare -A PRS_CREATED
+declare -A PRS_CLOSED
+declare -A ISSUES_CREATED
+declare -A ISSUES_CLOSED
 
 for username in "${!USERNAMES[@]}"; do
   MERGED_ADDITIONS["$username"]=0
@@ -34,7 +38,11 @@ for username in "${!USERNAMES[@]}"; do
   PR_ADDITIONS["$username"]=0
   PR_DELETIONS["$username"]=0
   COMMIT_COUNT["$username"]=0
-  PR_COUNT["$username"]=0
+  OPEN_PR_COUNT["$username"]=0
+  PRS_CREATED["$username"]=0
+  PRS_CLOSED["$username"]=0
+  ISSUES_CREATED["$username"]=0
+  ISSUES_CLOSED["$username"]=0
 done
 
 # Get all repos in the organization
@@ -68,18 +76,50 @@ for repo in $repos; do
     fi
   done
 
-  # Get open PRs by team members
+  # Get open PRs by team members (for line counts)
   for username in "${!USERNAMES[@]}"; do
     prs=$(gh pr list --repo "$full_repo" --author "$username" --state open --json additions,deletions 2>/dev/null || echo "[]")
 
     pr_count=$(echo "$prs" | jq 'length')
-    PR_COUNT["$username"]=$((PR_COUNT["$username"] + pr_count))
+    OPEN_PR_COUNT["$username"]=$((OPEN_PR_COUNT["$username"] + pr_count))
 
     additions=$(echo "$prs" | jq '[.[].additions] | add // 0')
     deletions=$(echo "$prs" | jq '[.[].deletions] | add // 0')
 
     PR_ADDITIONS["$username"]=$((PR_ADDITIONS["$username"] + additions))
     PR_DELETIONS["$username"]=$((PR_DELETIONS["$username"] + deletions))
+  done
+
+  # Get PRs created today by team members
+  for username in "${!USERNAMES[@]}"; do
+    prs_created=$(gh api "repos/$full_repo/pulls?state=all&sort=created&direction=desc&per_page=50" \
+      --jq "[.[] | select(.created_at | startswith(\"$TODAY\")) | select(.user.login == \"$username\")] | length" \
+      2>/dev/null || echo "0")
+    PRS_CREATED["$username"]=$((PRS_CREATED["$username"] + prs_created))
+  done
+
+  # Get PRs closed/merged today by team members
+  for username in "${!USERNAMES[@]}"; do
+    prs_closed=$(gh api "repos/$full_repo/pulls?state=closed&sort=updated&direction=desc&per_page=50" \
+      --jq "[.[] | select(.closed_at | startswith(\"$TODAY\")) | select(.user.login == \"$username\")] | length" \
+      2>/dev/null || echo "0")
+    PRS_CLOSED["$username"]=$((PRS_CLOSED["$username"] + prs_closed))
+  done
+
+  # Get issues created today by team members
+  for username in "${!USERNAMES[@]}"; do
+    issues_created=$(gh api "repos/$full_repo/issues?state=all&sort=created&direction=desc&per_page=50&creator=$username" \
+      --jq "[.[] | select(.created_at | startswith(\"$TODAY\")) | select(.pull_request == null)] | length" \
+      2>/dev/null || echo "0")
+    ISSUES_CREATED["$username"]=$((ISSUES_CREATED["$username"] + issues_created))
+  done
+
+  # Get issues closed today by team members (as assignee)
+  for username in "${!USERNAMES[@]}"; do
+    issues_closed=$(gh api "repos/$full_repo/issues?state=closed&sort=updated&direction=desc&per_page=50&assignee=$username" \
+      --jq "[.[] | select(.closed_at | startswith(\"$TODAY\")) | select(.pull_request == null)] | length" \
+      2>/dev/null || echo "0")
+    ISSUES_CLOSED["$username"]=$((ISSUES_CLOSED["$username"] + issues_closed))
   done
 done
 
@@ -112,11 +152,15 @@ for username in "${!USERNAMES[@]}"; do
         "total": $merged_total
       },
       "openPRs": {
-        "count": ${PR_COUNT[$username]},
+        "count": ${OPEN_PR_COUNT[$username]},
         "additions": ${PR_ADDITIONS[$username]},
         "deletions": ${PR_DELETIONS[$username]},
         "total": $pr_total
       },
+      "prsCreated": ${PRS_CREATED[$username]},
+      "prsClosed": ${PRS_CLOSED[$username]},
+      "issuesCreated": ${ISSUES_CREATED[$username]},
+      "issuesClosed": ${ISSUES_CLOSED[$username]},
       "grandTotal": $grand_total
     }
 EOF
