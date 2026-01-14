@@ -18,11 +18,11 @@ DATE=$(echo "$REPORT_DATA" | jq -r '.date')
 ORG=$(echo "$REPORT_DATA" | jq -r '.organization')
 
 # Calculate team totals
-TEAM_TOTAL=$(echo "$REPORT_DATA" | jq '[.team[].grandTotal] | add')
-TEAM_PRS_CREATED=$(echo "$REPORT_DATA" | jq '[.team[].prsCreated] | add')
-TEAM_PRS_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].prsClosed] | add')
-TEAM_ISSUES_CREATED=$(echo "$REPORT_DATA" | jq '[.team[].issuesCreated] | add')
-TEAM_ISSUES_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].issuesClosed] | add')
+TEAM_TOTAL=$(echo "$REPORT_DATA" | jq '[.team[].grandTotal] | add // 0')
+TEAM_PRS_CREATED=$(echo "$REPORT_DATA" | jq '[.team[].prsCreated] | add // 0')
+TEAM_PRS_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].prsClosed] | add // 0')
+TEAM_ISSUES_CREATED=$(echo "$REPORT_DATA" | jq '[.team[].issuesCreated] | add // 0')
+TEAM_ISSUES_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].issuesClosed] | add // 0')
 
 # Build individual member sections
 MEMBER_BLOCKS=""
@@ -33,6 +33,7 @@ while IFS= read -r member; do
   prsClosed=$(echo "$member" | jq -r '.prsClosed')
   issuesCreated=$(echo "$member" | jq -r '.issuesCreated')
   issuesClosed=$(echo "$member" | jq -r '.issuesClosed')
+  repos=$(echo "$member" | jq -r '.repos | join(", ")')
 
   # Check if there's any activity
   hasActivity=false
@@ -44,10 +45,16 @@ while IFS= read -r member; do
     codeText="$grandTotal lines"
     prText="$prsCreated opened / $prsClosed closed"
     issueText="$issuesCreated opened / $issuesClosed closed"
+    if [[ -n "$repos" ]]; then
+      reposText="$repos"
+    else
+      reposText="—"
+    fi
   else
     codeText="—"
     prText="—"
     issueText="—"
+    reposText="—"
   fi
 
   if [[ -n "$MEMBER_BLOCKS" ]]; then
@@ -58,10 +65,11 @@ while IFS= read -r member; do
           {
             \"type\": \"Container\",
             \"spacing\": \"Medium\",
+            \"separator\": true,
             \"items\": [
               {
                 \"type\": \"TextBlock\",
-                \"text\": \"**$displayName**\",
+                \"text\": \"$displayName\",
                 \"weight\": \"Bolder\",
                 \"size\": \"Medium\"
               },
@@ -71,7 +79,7 @@ while IFS= read -r member; do
                 \"columns\": [
                   {
                     \"type\": \"Column\",
-                    \"width\": \"stretch\",
+                    \"width\": \"80px\",
                     \"items\": [
                       {
                         \"type\": \"TextBlock\",
@@ -82,13 +90,14 @@ while IFS= read -r member; do
                       {
                         \"type\": \"TextBlock\",
                         \"text\": \"$codeText\",
-                        \"spacing\": \"None\"
+                        \"spacing\": \"None\",
+                        \"weight\": \"Bolder\"
                       }
                     ]
                   },
                   {
                     \"type\": \"Column\",
-                    \"width\": \"stretch\",
+                    \"width\": \"140px\",
                     \"items\": [
                       {
                         \"type\": \"TextBlock\",
@@ -105,7 +114,7 @@ while IFS= read -r member; do
                   },
                   {
                     \"type\": \"Column\",
-                    \"width\": \"stretch\",
+                    \"width\": \"140px\",
                     \"items\": [
                       {
                         \"type\": \"TextBlock\",
@@ -121,12 +130,20 @@ while IFS= read -r member; do
                     ]
                   }
                 ]
+              },
+              {
+                \"type\": \"TextBlock\",
+                \"text\": \"Repos: $reposText\",
+                \"isSubtle\": true,
+                \"size\": \"Small\",
+                \"wrap\": true,
+                \"spacing\": \"Small\"
               }
             ]
           }"
 done < <(echo "$REPORT_DATA" | jq -c '.team | sort_by(-.grandTotal) | .[]')
 
-# Create the Teams Adaptive Card payload
+# Create the Teams Adaptive Card payload with full width
 PAYLOAD=$(cat << EOF
 {
   "type": "message",
@@ -137,6 +154,9 @@ PAYLOAD=$(cat << EOF
         "\$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.4",
+        "msteams": {
+          "width": "Full"
+        },
         "body": [
           {
             "type": "TextBlock",
@@ -157,7 +177,7 @@ PAYLOAD=$(cat << EOF
             "items": [
               {
                 "type": "TextBlock",
-                "text": "**Team Totals**",
+                "text": "Team Totals",
                 "weight": "Bolder"
               },
               {
@@ -165,7 +185,7 @@ PAYLOAD=$(cat << EOF
                 "columns": [
                   {
                     "type": "Column",
-                    "width": "stretch",
+                    "width": "auto",
                     "items": [
                       {
                         "type": "TextBlock",
@@ -184,7 +204,7 @@ PAYLOAD=$(cat << EOF
                   },
                   {
                     "type": "Column",
-                    "width": "stretch",
+                    "width": "auto",
                     "items": [
                       {
                         "type": "TextBlock",
@@ -203,7 +223,7 @@ PAYLOAD=$(cat << EOF
                   },
                   {
                     "type": "Column",
-                    "width": "stretch",
+                    "width": "auto",
                     "items": [
                       {
                         "type": "TextBlock",
