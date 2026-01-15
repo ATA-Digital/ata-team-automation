@@ -18,9 +18,10 @@ DATE=$(echo "$REPORT_DATA" | jq -r '.date')
 ORG=$(echo "$REPORT_DATA" | jq -r '.organization')
 
 # Calculate team totals
-TEAM_TOTAL=$(echo "$REPORT_DATA" | jq '[.team[].grandTotal] | add // 0')
+TEAM_LINES=$(echo "$REPORT_DATA" | jq '[.team[].totalLines] | add // 0')
+TEAM_COMMITS=$(echo "$REPORT_DATA" | jq '[.team[].commits] | add // 0')
 TEAM_PRS_CREATED=$(echo "$REPORT_DATA" | jq '[.team[].prsCreated] | add // 0')
-TEAM_PRS_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].prsClosed] | add // 0')
+TEAM_PRS_MERGED=$(echo "$REPORT_DATA" | jq '[.team[].prsMerged] | add // 0')
 TEAM_ISSUES_CREATED=$(echo "$REPORT_DATA" | jq '[.team[].issuesCreated] | add // 0')
 TEAM_ISSUES_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].issuesClosed] | add // 0')
 
@@ -28,23 +29,30 @@ TEAM_ISSUES_CLOSED=$(echo "$REPORT_DATA" | jq '[.team[].issuesClosed] | add // 0
 MEMBER_BLOCKS=""
 while IFS= read -r member; do
   displayName=$(echo "$member" | jq -r '.displayName')
-  grandTotal=$(echo "$member" | jq -r '.grandTotal')
+  linesAdded=$(echo "$member" | jq -r '.linesAdded')
+  linesRemoved=$(echo "$member" | jq -r '.linesRemoved')
+  totalLines=$(echo "$member" | jq -r '.totalLines')
+  commits=$(echo "$member" | jq -r '.commits')
   prsCreated=$(echo "$member" | jq -r '.prsCreated')
-  prsClosed=$(echo "$member" | jq -r '.prsClosed')
+  prsMerged=$(echo "$member" | jq -r '.prsMerged')
   issuesCreated=$(echo "$member" | jq -r '.issuesCreated')
   issuesClosed=$(echo "$member" | jq -r '.issuesClosed')
   repos=$(echo "$member" | jq -r '.repos | join(", ")')
 
   # Check if there's any activity
   hasActivity=false
-  if [[ "$grandTotal" -gt 0 ]] || [[ "$prsCreated" -gt 0 ]] || [[ "$prsClosed" -gt 0 ]] || [[ "$issuesCreated" -gt 0 ]] || [[ "$issuesClosed" -gt 0 ]]; then
+  if [[ "$totalLines" -gt 0 ]] || [[ "$prsCreated" -gt 0 ]] || [[ "$prsMerged" -gt 0 ]] || [[ "$issuesCreated" -gt 0 ]] || [[ "$issuesClosed" -gt 0 ]]; then
     hasActivity=true
   fi
 
   if [[ "$hasActivity" == "true" ]]; then
-    codeText="$grandTotal lines"
-    prText="$prsCreated opened / $prsClosed closed"
-    issueText="$issuesCreated opened / $issuesClosed closed"
+    if [[ "$totalLines" -gt 0 ]]; then
+      codeText="+$linesAdded / -$linesRemoved ($commits commits)"
+    else
+      codeText="—"
+    fi
+    prText="$prsCreated created / $prsMerged merged"
+    issueText="$issuesCreated created / $issuesClosed closed"
     if [[ -n "$repos" ]]; then
       reposText="$repos"
     else
@@ -79,7 +87,7 @@ while IFS= read -r member; do
                 \"columns\": [
                   {
                     \"type\": \"Column\",
-                    \"width\": \"80px\",
+                    \"width\": \"stretch\",
                     \"items\": [
                       {
                         \"type\": \"TextBlock\",
@@ -91,13 +99,13 @@ while IFS= read -r member; do
                         \"type\": \"TextBlock\",
                         \"text\": \"$codeText\",
                         \"spacing\": \"None\",
-                        \"weight\": \"Bolder\"
+                        \"wrap\": true
                       }
                     ]
                   },
                   {
                     \"type\": \"Column\",
-                    \"width\": \"140px\",
+                    \"width\": \"stretch\",
                     \"items\": [
                       {
                         \"type\": \"TextBlock\",
@@ -108,13 +116,14 @@ while IFS= read -r member; do
                       {
                         \"type\": \"TextBlock\",
                         \"text\": \"$prText\",
-                        \"spacing\": \"None\"
+                        \"spacing\": \"None\",
+                        \"wrap\": true
                       }
                     ]
                   },
                   {
                     \"type\": \"Column\",
-                    \"width\": \"140px\",
+                    \"width\": \"stretch\",
                     \"items\": [
                       {
                         \"type\": \"TextBlock\",
@@ -125,7 +134,8 @@ while IFS= read -r member; do
                       {
                         \"type\": \"TextBlock\",
                         \"text\": \"$issueText\",
-                        \"spacing\": \"None\"
+                        \"spacing\": \"None\",
+                        \"wrap\": true
                       }
                     ]
                   }
@@ -141,7 +151,7 @@ while IFS= read -r member; do
               }
             ]
           }"
-done < <(echo "$REPORT_DATA" | jq -c '.team | sort_by(-.grandTotal) | .[]')
+done < <(echo "$REPORT_DATA" | jq -c '.team | sort_by(-.totalLines) | .[]')
 
 # Create the Teams Adaptive Card payload with full width
 PAYLOAD=$(cat << EOF
@@ -185,7 +195,7 @@ PAYLOAD=$(cat << EOF
                 "columns": [
                   {
                     "type": "Column",
-                    "width": "auto",
+                    "width": "stretch",
                     "items": [
                       {
                         "type": "TextBlock",
@@ -195,7 +205,7 @@ PAYLOAD=$(cat << EOF
                       },
                       {
                         "type": "TextBlock",
-                        "text": "$TEAM_TOTAL lines",
+                        "text": "$TEAM_LINES lines ($TEAM_COMMITS commits)",
                         "weight": "Bolder",
                         "color": "Accent",
                         "spacing": "None"
@@ -204,7 +214,7 @@ PAYLOAD=$(cat << EOF
                   },
                   {
                     "type": "Column",
-                    "width": "auto",
+                    "width": "stretch",
                     "items": [
                       {
                         "type": "TextBlock",
@@ -214,7 +224,7 @@ PAYLOAD=$(cat << EOF
                       },
                       {
                         "type": "TextBlock",
-                        "text": "$TEAM_PRS_CREATED opened / $TEAM_PRS_CLOSED closed",
+                        "text": "$TEAM_PRS_CREATED created / $TEAM_PRS_MERGED merged",
                         "weight": "Bolder",
                         "color": "Accent",
                         "spacing": "None"
@@ -223,7 +233,7 @@ PAYLOAD=$(cat << EOF
                   },
                   {
                     "type": "Column",
-                    "width": "auto",
+                    "width": "stretch",
                     "items": [
                       {
                         "type": "TextBlock",
@@ -233,7 +243,7 @@ PAYLOAD=$(cat << EOF
                       },
                       {
                         "type": "TextBlock",
-                        "text": "$TEAM_ISSUES_CREATED opened / $TEAM_ISSUES_CLOSED closed",
+                        "text": "$TEAM_ISSUES_CREATED created / $TEAM_ISSUES_CLOSED closed",
                         "weight": "Bolder",
                         "color": "Accent",
                         "spacing": "None"
